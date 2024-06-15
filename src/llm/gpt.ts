@@ -50,7 +50,8 @@ type Retriever = Runnable<{
 }, RunnableConfig>;
 
 
-export class ChatBot {
+// Base class for all chatbots. 
+export class BaseChatBot {
     model: ChatOpenAI;
     retriever: Retriever;
     chats: Chat[] = [];
@@ -60,17 +61,6 @@ export class ChatBot {
         this.model = gpt3;
         this.model.apiKey = process.env.OPENAI_API_KEY;
     }
-
-    // public async get_response(input: string) {
-    //     const response = await this.retriever.invoke({
-    //         input: input,
-    //         chat_history: this.history,
-    //     });
-    //     this.history.push(new HumanMessage(input));
-    //     console.log(response);
-    //     this.history.push(new AIMessage(response.answer as string));
-    //     return response.answer;
-    // }
 
     public async new_chat() {
         const chat = new Chat(this);
@@ -102,11 +92,12 @@ export class ChatBot {
     }
 }
 
+// Base class for all chats.
 export class Chat {
     history: BaseMessage[] = [];
-    ChatBot: ChatBot;
+    ChatBot: BaseChatBot;
 
-    constructor(bot: ChatBot) {
+    constructor(bot: BaseChatBot) {
         this.ChatBot = bot;
     }
 
@@ -123,9 +114,6 @@ export class Chat {
 
 }
 
-export class Complaint extends ChatBot {
-
-}
 
 async function get_vector_store() {
     const text = fs.readFileSync("test.txt", "utf8");
