@@ -1,0 +1,8 @@
+2024/06/13-18:45:01.586 6a03 Creating DB /Users/agam/experiments/simple-typescript-starter/tokens/Agam's Phone 8/Default/Local Storage/leveldb since it was missing.
+2024/06/13-18:45:01.605 6a03 Reusing MANIFEST /Users/agam/experiments/simple-typescript-starter/tokens/Agam's Phone 8/Default/Local Storage/leveldb/MANIFEST-000001
+2024/06/14-03:35:59.209 8107 Level-0 table #5: started
+2024/06/14-03:35:59.256 8107 Level-0 table #5: 20442 bytes OK
+2024/06/14-03:35:59.294 8107 Delete type=0 #3
+2024/06/15-02:12:54.941 8107 Level-0 table #7: started
+2024/06/15-02:12:54.947 8107 Level-0 table #7: 17746 bytes OK
+2024/06/15-02:12:54.953 8107 Delete type=0 #4
