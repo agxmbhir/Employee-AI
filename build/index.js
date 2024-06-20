@@ -60,10 +60,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var venom = __importStar(require("venom-bot"));
-var gpt_1 = require("./llm/gpt");
+var complaintBot_1 = require("./llm/complaintBot");
 venom
     .create({
-    session: "Agam's Phone432", //name of session
+    session: "Agam's another phone", //name of session
 })
     .then(function (client) { return start(client); })
     .catch(function (erro) {
@@ -71,29 +71,30 @@ venom
 });
 function start(client) {
     return __awaiter(this, void 0, void 0, function () {
-        var bot;
+        var chat, bot;
         return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    bot = new gpt_1.ChatBot();
-                    return [4 /*yield*/, bot.add_retriever()];
-                case 1:
-                    _a.sent();
-                    client.onMessage(function (message) {
-                        console.log(message.body);
-                        bot.get_response(message.body).then(function (response) {
-                            client
-                                .sendText(message.from, response)
-                                .then(function (result) {
-                                console.log("Result: ", result); //return object success
-                            })
-                                .catch(function (erro) {
-                                console.error("Error when sending: ", erro); //return object error
-                            });
+            chat = new Map();
+            bot = new complaintBot_1.ComplaintBot(client);
+            bot.initialize();
+            client.onMessage(function (message) {
+                console.log(message.body);
+                if (!chat.has(message.from)) {
+                    chat.set(message.from, bot.new_chat());
+                }
+                chat.get(message.from).then(function (chat) {
+                    chat.get_response(message.body).then(function (response) {
+                        client
+                            .sendText(message.from, response)
+                            .then(function (result) {
+                            console.log("Result: ", result); //return object success
+                        })
+                            .catch(function (erro) {
+                            console.error("Error when sending: ", erro); //return object error
                         });
                     });
-                    return [2 /*return*/];
-            }
+                });
+            });
+            return [2 /*return*/];
         });
     });
 }

@@ -1,10 +1,12 @@
+import * as venom from "venom-bot";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { HNSWLib } from "@langchain/community/vectorstores/hnswlib";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { type Runnable, type RunnableInterface, RunnableConfig } from "@langchain/core/runnables";
+import { Runnable, type RunnableInterface, RunnableConfig } from "@langchain/core/runnables";
+import { BaseRetriever } from "@langchain/core/retrievers";
 import { pull } from "langchain/hub";
 import * as fs from "fs";
 import { Document } from "@langchain/core/documents";
@@ -16,9 +18,12 @@ import type { BaseMessage } from "@langchain/core/messages";
 
 dotenv.config();
 // @ts-ignore
-const gpt3 = new ChatOpenAI(("gpt-3.5-turbo"));
-gpt3.apiKey = process.env.OPENAI_API_KEY;
+const model = new ChatOpenAI(("gpt-4"));
+model.apiKey = process.env.OPENAI_API_KEY;
 
+/*
+ Simple Prompts for Query and Answer 
+*/
 const prompt = ChatPromptTemplate.fromMessages([
     [
         "system",
@@ -37,89 +42,102 @@ const retrieverPrompt = ChatPromptTemplate.fromMessages([
     ],
 ]);
 
-type Retriever = Runnable<{
-    input: string;
-    chat_history?: string | BaseMessage[];
-} & {
-    [key: string]: unknown;
-}, {
-    context: Document<Record<string, any>>[];
-    answer: string;
-} & {
-    [key: string]: unknown;
-}, RunnableConfig>;
-
 
 // Base class for all chatbots. 
 export class BaseChatBot {
     model: ChatOpenAI;
-    retriever: Retriever;
+    runnable: RunnableInterface;
+    vectorStoreRetriever: BaseRetriever;
     chats: Chat[] = [];
+    whatsappClient: venom.Whatsapp;
+    prompt: ChatPromptTemplate;
+    retrieverPrompt: ChatPromptTemplate;
 
 
-    public constructor() {
-        this.model = gpt3;
+    public constructor(whatsappClient: venom.Whatsapp = null) {
+        this.model = model;
         this.model.apiKey = process.env.OPENAI_API_KEY;
+        this.prompt = prompt;
+        this.retrieverPrompt = retrieverPrompt;
+        this.whatsappClient = whatsappClient;
     }
 
-    public async new_chat() {
+    new_chat() {
         const chat = new Chat(this);
         this.chats.push(chat);
         return chat;
     }
 
+    /*
+      Intialize the retriever with the specified file. 
+    */
+    public async initialize(file: string = "test.txt") {
+        let vectorStoreRetriever
+        if (!this.vectorStoreRetriever) {
+            vectorStoreRetriever = await this.initialize_vector_store_retriever(file);
+        } else {
+            vectorStoreRetriever = this.vectorStoreRetriever;
+        }
 
-    public async add_retriever() {
-        const vectorStore = await get_vector_store();
-        const vector_store_retriever = (await vectorStore).asRetriever();
         let model = this.model;
         const combineDocsChain = await createStuffDocumentsChain({
             llm: model,
-            prompt,
+            prompt: this.prompt,
         });
         const history_aware_retriever = await createHistoryAwareRetriever({
             llm: model,
-            retriever: vector_store_retriever,
-            rephrasePrompt: retrieverPrompt,
+            retriever: vectorStoreRetriever,
+            rephrasePrompt: this.retrieverPrompt,
         });
-
         const retrievalChain = await createRetrievalChain({
             combineDocsChain,
             retriever: history_aware_retriever,
         });
-        this.retriever = retrievalChain;
-        return retrievalChain;
+        this.runnable = retrievalChain;
+    }
+
+    /*
+      Helper function to initialize the vector store.
+     */
+    async initialize_vector_store_retriever(file: string) {
+        const text = fs.readFileSync(`docs/${file}`, "utf8");
+        const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
+        const docs = await textSplitter.createDocuments([text]);
+
+        const vectorStore = HNSWLib.fromDocuments(docs, new OpenAIEmbeddings());
+        let retriever = (await vectorStore).asRetriever();
+        this.vectorStoreRetriever = retriever;
+        return retriever;
     }
 }
 
-// Base class for all chats.
+
+/*
+    a class to manage the chat history and the chatbot.
+*/
 export class Chat {
     history: BaseMessage[] = [];
     ChatBot: BaseChatBot;
+    private runnable: RunnableInterface;
 
     constructor(bot: BaseChatBot) {
         this.ChatBot = bot;
+        this.runnable = bot.runnable; // Default to bot's runnable
+    }
+
+    setRunnable(runnable: RunnableInterface) {
+        this.runnable = runnable;
     }
 
     public async get_response(input: string) {
-        const response = await this.ChatBot.retriever.invoke({
+        const response = await this.runnable.invoke({
             input: input,
             chat_history: this.history,
         });
         this.history.push(new HumanMessage(input));
+        this.history.push(new AIMessage(response));
         console.log(response);
-        this.history.push(new AIMessage(response.answer as string));
-        return response.answer;
+        return response;
     }
-
 }
 
-
-async function get_vector_store() {
-    const text = fs.readFileSync("test.txt", "utf8");
-    const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
-    const docs = await textSplitter.createDocuments([text]);
-
-    const vectorStore = HNSWLib.fromDocuments(docs, new OpenAIEmbeddings());
-    return vectorStore;
-}

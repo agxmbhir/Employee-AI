@@ -1,19 +1,4 @@
 "use strict";
-var __extends = (this && this.__extends) || (function () {
-    var extendStatics = function (d, b) {
-        extendStatics = Object.setPrototypeOf ||
-            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
-        return extendStatics(d, b);
-    };
-    return function (d, b) {
-        if (typeof b !== "function" && b !== null)
-            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -77,7 +62,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Complaint = exports.ChatBot = void 0;
+exports.Chat = exports.BaseChatBot = void 0;
 var openai_1 = require("@langchain/openai");
 var hnswlib_1 = require("@langchain/community/vectorstores/hnswlib");
 var messages_1 = require("@langchain/core/messages");
@@ -93,6 +78,9 @@ dotenv_1.default.config();
 // @ts-ignore
 var gpt3 = new openai_1.ChatOpenAI(("gpt-3.5-turbo"));
 gpt3.apiKey = process.env.OPENAI_API_KEY;
+/*
+ Simple Prompts for Query and Answer
+*/
 var prompt = prompts_1.ChatPromptTemplate.fromMessages([
     [
         "system",
@@ -109,18 +97,102 @@ var retrieverPrompt = prompts_1.ChatPromptTemplate.fromMessages([
         "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation",
     ],
 ]);
-var ChatBot = /** @class */ (function () {
-    function ChatBot() {
-        this.history = [];
+// Base class for all chatbots. 
+var BaseChatBot = /** @class */ (function () {
+    function BaseChatBot(whatsappClient) {
+        this.chats = [];
         this.model = gpt3;
         this.model.apiKey = process.env.OPENAI_API_KEY;
+        this.prompt = prompt;
+        this.retrieverPrompt = retrieverPrompt;
+        this.whatsappClient = whatsappClient;
     }
-    ChatBot.prototype.get_response = function (input) {
+    BaseChatBot.prototype.new_chat = function () {
+        var chat = new Chat(this);
+        this.chats.push(chat);
+        return chat;
+    };
+    /*
+      Intialize the retriever with the specified file.
+    */
+    BaseChatBot.prototype.initialize = function (file) {
+        if (file === void 0) { file = "test.txt"; }
+        return __awaiter(this, void 0, void 0, function () {
+            var vector_store_retriever, model, combineDocsChain, history_aware_retriever, retrievalChain;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        if (!this.vectorStoreRetriever) {
+                            this.initialize_vector_store_retriever(file);
+                        }
+                        vector_store_retriever = this.vectorStoreRetriever;
+                        model = this.model;
+                        return [4 /*yield*/, (0, combine_documents_1.createStuffDocumentsChain)({
+                                llm: model,
+                                prompt: this.prompt,
+                            })];
+                    case 1:
+                        combineDocsChain = _a.sent();
+                        return [4 /*yield*/, (0, history_aware_retriever_1.createHistoryAwareRetriever)({
+                                llm: model,
+                                retriever: vector_store_retriever,
+                                rephrasePrompt: this.retrieverPrompt,
+                            })];
+                    case 2:
+                        history_aware_retriever = _a.sent();
+                        return [4 /*yield*/, (0, retrieval_1.createRetrievalChain)({
+                                combineDocsChain: combineDocsChain,
+                                retriever: history_aware_retriever,
+                            })];
+                    case 3:
+                        retrievalChain = _a.sent();
+                        this.runnable = retrievalChain;
+                        return [2 /*return*/, retrievalChain];
+                }
+            });
+        });
+    };
+    /*
+      Helper function to initialize the vector store.
+     */
+    BaseChatBot.prototype.initialize_vector_store_retriever = function (file) {
+        return __awaiter(this, void 0, void 0, function () {
+            var text, textSplitter, docs, vectorStore, retriever;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        text = fs.readFileSync("docs/".concat(file), "utf8");
+                        textSplitter = new text_splitter_1.RecursiveCharacterTextSplitter({ chunkSize: 1000 });
+                        return [4 /*yield*/, textSplitter.createDocuments([text])];
+                    case 1:
+                        docs = _a.sent();
+                        vectorStore = hnswlib_1.HNSWLib.fromDocuments(docs, new openai_1.OpenAIEmbeddings());
+                        return [4 /*yield*/, vectorStore];
+                    case 2:
+                        retriever = (_a.sent()).asRetriever();
+                        this.vectorStoreRetriever = retriever;
+                        return [2 /*return*/, retriever];
+                }
+            });
+        });
+    };
+    return BaseChatBot;
+}());
+exports.BaseChatBot = BaseChatBot;
+/*
+    a class to manage the chat history and the chatbot.
+*/
+var Chat = /** @class */ (function () {
+    function Chat(bot) {
+        this.history = [];
+        this.ChatBot = bot;
+    }
+    Chat.prototype.get_response = function (input) {
         return __awaiter(this, void 0, void 0, function () {
             var response;
             return __generator(this, function (_a) {
                 switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.retriever.invoke({
+                    case 0: return [4 /*yield*/, this.ChatBot.runnable.invoke({
                             input: input,
                             chat_history: this.history,
                         })];
@@ -134,68 +206,6 @@ var ChatBot = /** @class */ (function () {
             });
         });
     };
-    ChatBot.prototype.add_retriever = function () {
-        return __awaiter(this, void 0, void 0, function () {
-            var vectorStore, vector_store_retriever, model, combineDocsChain, history_aware_retriever, retrievalChain;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, get_vector_store()];
-                    case 1:
-                        vectorStore = _a.sent();
-                        return [4 /*yield*/, vectorStore];
-                    case 2:
-                        vector_store_retriever = (_a.sent()).asRetriever();
-                        model = this.model;
-                        return [4 /*yield*/, (0, combine_documents_1.createStuffDocumentsChain)({
-                                llm: model,
-                                prompt: prompt,
-                            })];
-                    case 3:
-                        combineDocsChain = _a.sent();
-                        return [4 /*yield*/, (0, history_aware_retriever_1.createHistoryAwareRetriever)({
-                                llm: model,
-                                retriever: vector_store_retriever,
-                                rephrasePrompt: retrieverPrompt,
-                            })];
-                    case 4:
-                        history_aware_retriever = _a.sent();
-                        return [4 /*yield*/, (0, retrieval_1.createRetrievalChain)({
-                                combineDocsChain: combineDocsChain,
-                                retriever: history_aware_retriever,
-                            })];
-                    case 5:
-                        retrievalChain = _a.sent();
-                        this.retriever = retrievalChain;
-                        return [2 /*return*/, retrievalChain];
-                }
-            });
-        });
-    };
-    return ChatBot;
+    return Chat;
 }());
-exports.ChatBot = ChatBot;
-var Complaint = /** @class */ (function (_super) {
-    __extends(Complaint, _super);
-    function Complaint() {
-        return _super !== null && _super.apply(this, arguments) || this;
-    }
-    return Complaint;
-}(ChatBot));
-exports.Complaint = Complaint;
-function get_vector_store() {
-    return __awaiter(this, void 0, void 0, function () {
-        var text, textSplitter, docs, vectorStore;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    text = fs.readFileSync("test.txt", "utf8");
-                    textSplitter = new text_splitter_1.RecursiveCharacterTextSplitter({ chunkSize: 1000 });
-                    return [4 /*yield*/, textSplitter.createDocuments([text])];
-                case 1:
-                    docs = _a.sent();
-                    vectorStore = hnswlib_1.HNSWLib.fromDocuments(docs, new openai_1.OpenAIEmbeddings());
-                    return [2 /*return*/, vectorStore];
-            }
-        });
-    });
-}
+exports.Chat = Chat;
