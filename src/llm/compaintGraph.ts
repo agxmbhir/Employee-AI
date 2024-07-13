@@ -13,16 +13,14 @@ import { ToolExecutor } from "@langchain/langgraph/prebuilt";
 import { END, MessageGraph, START } from "@langchain/langgraph";
 import { MessagesPlaceholder } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
-import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
-import { createRetrievalChain } from "langchain/chains/retrieval";
 import { DynamicStructuredTool } from "langchain/tools";
 import { z } from "zod";
+import * as env from "dotenv";
+env.config();
 
-async function complaintGraph() {
-    // @ts-ignore
-    const model = new ChatOpenAI(("gpt-4"));
-    model.apiKey = process.env.OPENAI_API_KEY;
+export async function complaintGraph() {
+    console.log("Open ai", process.env.OPENAI_API_KEY);
+    const model = new ChatOpenAI({ modelName: "gpt-4", temperature: 0, openAIApiKey: process.env.OPENAI_API_KEY });
 
     const complaintManagerTool = new DynamicStructuredTool({
         name: "Customer_Complaint_Manager",
@@ -48,7 +46,7 @@ async function complaintGraph() {
         },
     );
 
-    const employee_db = await get_vector_store_retriever("employee_db.txt");
+    const employee_db = await get_vector_store_retriever("employee.txt");
     const employeeRetrieverTool = createRetrieverTool(
         employee_db,
         {
@@ -117,7 +115,6 @@ async function complaintGraph() {
     /*
         Decides the action to be taken based on the last message in the state.
     */
-
     async function decide_action(state: Array<BaseMessage>): Promise<any> {
         console.log("---CALL DECIDE ACTION---");
         const lastMessage = state[state.length - 1];
@@ -145,7 +142,7 @@ async function complaintGraph() {
         ]);
 
         const chain = prompt.pipe(model).pipe(new StringOutputParser());
-        let raw = await chain.invoke({ messages: state });
+        let raw = await chain.invoke({ message: state });
         if (raw.includes("QUERY")) {
             console.log("DECIDED ACTION: QUERY");
             return "query";
@@ -191,6 +188,11 @@ async function complaintGraph() {
         return [response];
     }
 
+    async function instagram() {
+
+    }
+
+    { }
     // Compiling the graph; 
     let workflow = new MessageGraph()
         .addNode("agent", agent)
@@ -211,4 +213,7 @@ async function complaintGraph() {
     workflow.addEdge("get_complaint_params", "register_complaint");
     workflow.addEdge("register_complaint", END);
     workflow.addEdge("querySupport", END);
+
+    let graph = workflow.compile();
+    return graph;
 }
